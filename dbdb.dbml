@@ -1,5 +1,5 @@
 Table Dishes {
-dish_id integer [ pk increment not null unique ]
+dish_id integer [ pk, increment, not null, unique ]
 Name text
 Calories integer
 Type text [ note: 'Salad/soup/second course...']
