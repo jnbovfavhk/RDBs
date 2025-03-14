@@ -1,0 +1,113 @@
+Table Dishes {
+dish_id integer [ pk increment not null unique ]
+Name text
+Calories integer
+Type text [ note: 'Salad/soup/second course...']
+}
+
+Table Warehouse {
+product_id integer [ pk increment not null unique ]
+Quantity in stock integer
+Date date
+Warehouse type text [ note: 'Refrigerator, freezer, regular...']
+}
+
+Table Dishes and Ingredients {
+recipe_id integer [ pk not null ]
+product_id integer [ increment not null unique ]
+Product quantity integer
+dish_id integer [ not null ]
+Cooking method text
+}
+
+Table Deliveries {
+consignment note_id integer [ pk increment not null unique ]
+Quantity integer [ not null ]
+Arrival date date
+Date expiration date [ not null ]
+supplier_id integer
+product_id integer
+}
+
+Table Suppliers {
+supplier_id integer [ pk increment not null unique ]
+Name text
+}
+
+Table Receipts {
+receipt_id integer [ pk increment not null unique ]
+Date date
+Time time
+waiter_id integer
+Receipt amount real
+client_id integer
+Payment type text
+}
+
+Table Employees {
+employee_id integer [ pk increment not null unique ]
+Position text
+Full name text
+Experience smallint
+Phone number bigint
+}
+
+Table Sales {
+sale_id integer [ pk ]
+dish_id integer
+cook_id integer
+Date date
+receipt_id integer [ increment not null unique ]
+Sales amount real
+}
+
+Table Allergens {
+allergen_id integer [ pk increment not null unique ]
+Allergen text
+product_id integer
+}
+
+Table Client {
+client_id integer [ pk increment not null unique ]
+Discount level smallint
+}
+
+Ref fk_Dishes and ingredients_dish_id_Dishes {
+Dishes and ingredients.dish_id - Dishes.dish_id [ delete: no action, on update: no action ]
+}
+
+Ref fk_Dishes and ingredients_product_id_Warehouse {
+Dishes and ingredients.product_id - Warehouse.product_id [ delete: no action, on update: no action ]
+}
+
+Ref fk_Supplies_supplier_id_Suppliers {
+Supplies.supplier_id - Suppliers.supplier_id [ delete: no action, on update: no action ]
+}
+
+Ref fk_Supplies_product_id_Warehouse {
+Supplies.product_id - Warehouse.product_id [ delete: no action, on update: no action ]
+}
+
+Ref fk_Employees_Employee_id_Receipts {
+Employees.employee_id - Receipts.waiter_id [ delete: no action, on update: no action ]
+}
+
+Ref fk_Sales_receipt_id_Receipts {
+Sales.receipt_id - Receipts.receipt_id [ delete: no action, on update: no action ]
+}
+
+Ref fk_Sales_dish_id_Dishes {
+Sales.dish_id - Dishes.dish_id [ delete: no action, on update: no action ]
+}
+
+Ref fk_Sales_cook_id_Employees {
+Sales.cook_id - Employees.employee_id [ delete: no action, on update: no action ]
+}
+
+Ref fk_Allergens_ingredient_id_Dishes and ingredients {
+Allergens.product_id - Dishes and ingredients.product_id [ delete: no action, on update: no action ]
+}
+
+Ref fk_Receipts_client_id_Client {
+Receipts.client_id - Client.client_id [ delete: no action, on update: no action ]
+}
