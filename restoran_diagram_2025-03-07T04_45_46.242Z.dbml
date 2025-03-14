@@ -1,4 +1,4 @@
-Table Блюда {
+Table Bлюда {
 	id_блюда integer [ pk increment not null unique ]
 	Название text
 	Калории integer
