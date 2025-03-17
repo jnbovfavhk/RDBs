@@ -1,0 +1,30 @@
+ALTER TABLE "Dishes_and_Ingredients"
+ADD FOREIGN KEY("dish_id") REFERENCES "Dishes"("dish_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE "Dishes_and_Ingredients"
+ADD FOREIGN KEY("product_id") REFERENCES "Warehouse"("product_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE "Deliveries"
+ADD FOREIGN KEY("product_id") REFERENCES "Warehouse"("product_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE "Sales"
+ADD FOREIGN KEY("dish_id") REFERENCES "Dishes"("dish_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE "Sales"
+ADD FOREIGN KEY("cook_id") REFERENCES "Employees"("employee_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE "Sales"
+ADD FOREIGN KEY("receipt_id") REFERENCES "Receipts"("receipt_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE "Allergens"
+ADD FOREIGN KEY("product_id") REFERENCES "Warehouse"("product_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE "Deliveries"
+ADD FOREIGN KEY("supplier_id") REFERENCES "Suppliers"("supplier_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE "Receipts"
+ADD FOREIGN KEY("waiter_id") REFERENCES "Employees"("employee_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE "Receipts"
+ADD FOREIGN KEY("client_id") REFERENCES "Clients"("client_id")
+ON UPDATE NO ACTION ON DELETE NO ACTION;
