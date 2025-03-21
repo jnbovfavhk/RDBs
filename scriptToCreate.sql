@@ -89,3 +89,11 @@ CREATE TABLE "Clients" (
 	"Phone_number" BIGINT,
 	PRIMARY KEY("client_id")
 );
+
+CREATE TABLE products_and_consignment_notes (
+	consignment_note_id int NOT NULL,
+	product_id int NOT NULL,
+	CONSTRAINT products_and_consignment_notes_warehouse_fk FOREIGN KEY (product_id) REFERENCES public."Warehouse"(product_id),
+	CONSTRAINT products_and_consignment_notes_deliveries_fk FOREIGN KEY (consignment_note_id) REFERENCES public."Deliveries"(consignment_note_id)
+);
+
