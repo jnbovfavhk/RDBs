@@ -8,7 +8,7 @@ CREATE TABLE "Dishes" (
 );
 
 CREATE TABLE "Warehouse" (
-	"product_id" SERIAL,
+	"product_id" INT,
 	"Quantity_in_stock" INTEGER,
 	"Date" DATE NOT NULL,
 	"Warehouse_type" TEXT NOT NULL,
@@ -90,10 +90,8 @@ CREATE TABLE "Clients" (
 	PRIMARY KEY("client_id")
 );
 
-CREATE TABLE products_and_consignment_notes (
-	consignment_note_id int NOT NULL,
-	product_id int NOT NULL,
-	CONSTRAINT products_and_consignment_notes_warehouse_fk FOREIGN KEY (product_id) REFERENCES public."Warehouse"(product_id),
-	CONSTRAINT products_and_consignment_notes_deliveries_fk FOREIGN KEY (consignment_note_id) REFERENCES public."Deliveries"(consignment_note_id)
-);
 
+create table "Products" (
+	"product_id" SERIAL PRIMARY key, 
+	"Product_name" TEXT NOT NULL
+);
