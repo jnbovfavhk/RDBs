@@ -8,7 +8,7 @@ CREATE TABLE "Dishes" (
 );
 
 CREATE TABLE "Warehouse" (
-	"product_id" INT,
+	"product_id" INTEGER,
 	"Quantity_in_stock" INTEGER,
 	"Date" DATE NOT NULL,
 	"Warehouse_type" TEXT NOT NULL,
@@ -77,10 +77,13 @@ CREATE TABLE "Sales" (
 CREATE TABLE "Allergens" (
 	"allergen_id" SERIAL,
 	"Allergen" TEXT NOT NULL,
-	"product_id" INTEGER NOT NULL,
 	PRIMARY KEY("allergen_id")
 );
 
+create table "Allergents_and_products" (
+	"allergen_id" INTEGER not null,
+	"product_id" INTEGER not NULL
+);
 
 CREATE TABLE "Clients" (
 	"client_id" SERIAL,
