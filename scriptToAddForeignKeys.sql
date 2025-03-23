@@ -22,9 +22,13 @@ ALTER TABLE "Sales"
 ADD FOREIGN KEY("receipt_id") REFERENCES "Receipts"("receipt_id")
 ON UPDATE CASCADE ON DELETE CASCADE;
 
-ALTER TABLE "Allergens"
+ALTER TABLE "Allergens_and_products"
 ADD FOREIGN KEY("product_id") REFERENCES "Products"("product_id")
 ON UPDATE CASCADE ON DELETE NO ACTION;
+
+alter table "Allergens_and_products"
+add foreign key("allergen_id") references "Allergens"("allergen_id")
+on update cascade on delete no action;
 
 ALTER TABLE "Deliveries"
 ADD FOREIGN KEY("supplier_id") REFERENCES "Suppliers"("supplier_id")
@@ -41,3 +45,6 @@ ON UPDATE CASCADE ON DELETE RESTRICT;
 ALTER TABLE "Warehouse"
 ADD FOREIGN KEY ("product_id") REFERENCES "Products" ("product_id")
 ON UPDATE CASCADE ON DELETE RESTRICT;
+
+add table "Allergens_and_products"
+add foreign key()
