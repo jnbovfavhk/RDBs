@@ -80,7 +80,7 @@ CREATE TABLE "Allergens" (
 	PRIMARY KEY("allergen_id")
 );
 
-create table "Allergents_and_products" (
+create table "Allergens_and_products" (
 	"allergen_id" INTEGER not null,
 	"product_id" INTEGER not NULL
 );
