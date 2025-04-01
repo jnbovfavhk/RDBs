@@ -62,6 +62,6 @@ INSERT INTO "Sales" ("dish_id", "cook_id", "receipt_id", "Sale_amount") VALUES
 (1, 2, 1, 400),
 (2, 2, 2, 500);
 
-INSERT INTO "Allergens_and_products" (allergen_id, product_id) VALUES
+INSERT INTO "Allergens_and_dishes" (allergen_id, dish_id) VALUES
 (1, 1),
 (2, 2);
