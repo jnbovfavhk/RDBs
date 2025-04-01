@@ -80,9 +80,9 @@ CREATE TABLE "Allergens" (
 	PRIMARY KEY("allergen_id")
 );
 
-create table "Allergens_and_products" (
+create table "Allergens_and_dishes" (
 	"allergen_id" INTEGER not null,
-	"product_id" INTEGER not NULL
+	"dish_id" INTEGER not NULL
 );
 
 CREATE TABLE "Clients" (
