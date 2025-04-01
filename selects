@@ -1,0 +1,163 @@
+-- Получить блюда, их цены и поваров, которые их готовили
+SELECT D."Name" AS Dish, D."Price", E."Full_name" AS Cook
+FROM "Dishes" D
+INNER JOIN "Sales" S ON D.dish_id = S.dish_id
+INNER JOIN "Employees" E ON S.cook_id = E.employee_id;
+
+
+-- Получить информацию о продажах + блюда, которые еще не были проданы + продажи блюд, которых больше нет
+SELECT D."Name" AS Dish, S."Sale_amount"
+FROM "Dishes" D
+FULL JOIN "Sales" S ON D.dish_id = S.dish_id;
+
+
+-- Блюда, их ингридиенты, количество интгридиента и что с ним сделать
+SELECT D."Name" AS Dish, P."Product_name", DI."Product_quantity", DI."Cooking_method"
+FROM "Dishes" D
+JOIN "Dishes_and_Ingredients" DI ON D.dish_id = DI.dish_id
+JOIN "Products" P ON DI.product_id = P.product_id;
+
+-- Получить названия блюд, которые также являются продуктами
+SELECT "Name" FROM "Dishes"
+INTERSECT
+SELECT "Product_name" FROM "Products";
+
+-- Получить названия блюд, которые не являются продуктами
+SELECT "Name" FROM "Dishes"
+EXCEPT
+SELECT "Product_name" FROM "Products";
+
+-- Получить то, что на складе есть
+SELECT P."Product_name", W."Quantity_in_stock"
+FROM "Products" P
+FULL JOIN "Warehouse" W ON P.product_id = W.product_id;
+
+-- Получить всех клиентов, которые сделали хотя бы один заказ
+SELECT C.client_id
+FROM "Clients" C
+WHERE EXISTS (
+    SELECT 1 FROM "Receipts" R WHERE R.client_id = C.client_id
+);
+
+
+-- Получить блюда, в которых нет аллергена - орехов
+SELECT D."Name" AS Dish
+FROM "Dishes" D
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM "Allergens_and_dishes" AD
+    JOIN "Allergens" A ON AD.allergen_id = A.allergen_id
+    WHERE AD.dish_id = D.dish_id
+    AND A."Allergen" = 'Орехи'
+);
+
+-- Получить клиентов с уровнем скидок 2 и 3
+SELECT *
+FROM "Clients"
+WHERE "Discount_level" IN (2, 3);
+
+
+-- Самое(ые) дорогое блюдо
+SELECT "Name"
+FROM "Dishes"
+WHERE "Price" >= ALL (SELECT "Price" FROM "Dishes");
+
+
+-- Блюда, цена которых в диапазоне от 300 до 500
+SELECT "Name"
+FROM "Dishes"
+WHERE "Price" BETWEEN 300 AND 500;
+
+
+-- Выбрать все пиццы из блюд
+SELECT *
+FROM "Dishes"
+WHERE "Name" ILIKE '%пицца%';
+
+-- Вывести все ООО и ИП в поставщиках
+SELECT "Name"
+FROM "Suppliers"
+WHERE "Name" ~ 'ООО|ИП';
+
+-- Заменить уровень клинента на категории и вывести
+SELECT client_id, "Card_number", "Phone_number",
+       CASE 
+           WHEN "Discount_level" = 1 THEN 'Новый клиент'
+           WHEN "Discount_level" = 2 THEN 'Регулярный'
+           WHEN "Discount_level" = 3 THEN 'Постоянный клиент'
+           ELSE 'Неизвестный уровень'
+       END AS Discount_description
+FROM "Clients";
+
+
+-- Преобразование калорий типа int8 в текст 
+SELECT dish_id, "Name", 
+       CAST("Calories" AS TEXT) AS Calories_as_text
+FROM "Dishes";
+
+-- Получить все поставки, заменяя количество привезенного товара с null на 0
+SELECT consignment_note_id, 
+       COALESCE("Quantity", 0) AS Quantity_or_zero
+FROM "Deliveries";
+
+
+-- Блюда с длинами их названий
+SELECT "Name", LENGTH("Name") AS Name_Length
+FROM "Dishes";
+
+
+-- блюда с удаленными пробелами в начале и конце
+SELECT "Name", BTRIM("Name") AS Trimmed_Name
+FROM "Dishes";
+
+
+-- Все чеки, созданные сегодня
+SELECT *
+FROM "Receipts"
+WHERE "Date" = CURRENT_DATE;
+
+-- Получить чеки и их года
+SELECT receipt_id, EXTRACT(YEAR FROM "Date") AS year, waiter_id, "Receipt_amount"
+FROM "Receipts";
+
+--Количество блюд в меню
+SELECT COUNT(*) AS Total_Dishes
+FROM "Dishes";
+
+
+-- Суммы продаж за каждый день за 10-й месяц 2023 года
+SELECT 
+    "Date" AS ReceiptDate, 
+    SUM("Receipt_amount") AS AverageAmount
+FROM "Receipts"
+WHERE 
+    EXTRACT(MONTH FROM "Date") = 10 
+    AND EXTRACT(YEAR FROM "Date") = 2023 
+GROUP BY 
+    DATE("Date")
+ORDER BY 
+    "Date";
+
+
+-- Колиество чеков за каждый день 10 месяца 2023 года
+SELECT 
+    "Date" AS ReceiptDate, 
+    COUNT(receipt_id) AS AverageAmount
+FROM "Receipts"
+WHERE 
+    EXTRACT(MONTH FROM "Date") = 10 
+    AND EXTRACT(YEAR FROM "Date") = 2023 
+GROUP BY 
+    DATE("Date")
+ORDER BY 
+    "Date";
+
+
+-- Получить id клиентов, которые сделали больше 3-х заказов
+SELECT C.client_id, COUNT(R.receipt_id) AS order_count
+FROM "Clients" C
+JOIN "Receipts" R ON C.client_id = R.client_id
+GROUP BY C.client_id
+HAVING COUNT(R.receipt_id) > 3;
+
+
