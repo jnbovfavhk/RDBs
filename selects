@@ -14,8 +14,8 @@ FULL JOIN "Sales" S ON D.dish_id = S.dish_id;
 -- Блюда, их ингридиенты, количество интгридиента и что с ним сделать
 SELECT D."Name" AS Dish, P."Product_name", DI."Product_quantity", DI."Cooking_method"
 FROM "Dishes" D
-JOIN "Dishes_and_Ingredients" DI ON D.dish_id = DI.dish_id
-JOIN "Products" P ON DI.product_id = P.product_id;
+INNER JOIN "Dishes_and_Ingredients" DI ON D.dish_id = DI.dish_id
+INNER JOIN "Products" P ON DI.product_id = P.product_id;
 
 -- Получить названия блюд, которые также являются продуктами
 SELECT "Name" FROM "Dishes"
@@ -127,14 +127,14 @@ FROM "Dishes";
 
 -- Суммы продаж за каждый день за 10-й месяц 2023 года
 SELECT 
-    "Date" AS ReceiptDate, 
+    "Date", 
     SUM("Receipt_amount") AS AverageAmount
 FROM "Receipts"
 WHERE 
     EXTRACT(MONTH FROM "Date") = 10 
     AND EXTRACT(YEAR FROM "Date") = 2023 
 GROUP BY 
-    DATE("Date")
+    "Date"
 ORDER BY 
     "Date";
 
@@ -148,7 +148,7 @@ WHERE
     EXTRACT(MONTH FROM "Date") = 10 
     AND EXTRACT(YEAR FROM "Date") = 2023 
 GROUP BY 
-    DATE("Date")
+    "Date"
 ORDER BY 
     "Date";
 
@@ -157,7 +157,4 @@ ORDER BY
 SELECT C.client_id, COUNT(R.receipt_id) AS order_count
 FROM "Clients" C
 JOIN "Receipts" R ON C.client_id = R.client_id
-GROUP BY C.client_id
 HAVING COUNT(R.receipt_id) > 3;
-
-
