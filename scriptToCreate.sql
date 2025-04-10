@@ -62,6 +62,7 @@ CREATE TABLE "Employees" (
 	"Full_name" TEXT NOT NULL,
 	"Experience" SMALLINT NOT NULL,
 	"Phone_number" BIGINT NOT NULL,
+	"Salary" INT,
 	PRIMARY KEY("employee_id")
 );
 
