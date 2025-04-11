@@ -10,14 +10,20 @@ INSERT INTO "Suppliers" ("Name") VALUES
 ('Здоровое питание');
 
 
+INSERT into "Dishes" ("Name", "Calories", "Price") values
+('Мекисканская пицца', 600, 900),
+('Клубника', 100, 300);
 
+insert into "Products" ("Product_name") values
+('Клубника');
 
 
 INSERT INTO "Employees" ("Position", "Full_name", "Experience", "Phone_number") VALUES
 ('Официант', 'Иван Иванов', 2, 89001234567),
 ('Повар', 'Петр Петров', 5, 89007654321);
 
-
+INSERT INTO "Employees" ("Position", "Full_name", "Experience", "Phone_number", "Salary") VALUES
+('Повар', 'Иван Поваров', 5, 89007654321, 70000);
 
 
 
@@ -33,6 +39,19 @@ INSERT INTO "Allergens" ("Allergen") VALUES
 INSERT INTO "Clients" ("Discount_level", "Card_number", "Phone_number") VALUES
 (1, 1234567890123456, 89005551234),
 (2, 1234567890123457, 89005551235);
+
+INSERT INTO "Clients" ("Discount_level", "Card_number", "Phone_number") VALUES
+(3, 6789456734561234, 89035551284);
+
+INSERT INTO "Clients" ("Card_number", "Phone_number") VALUES
+(1234567891223406, 89080551234);
+
+insert into "Suppliers" ("Name") values
+('ООО Картинный'),
+('ИП Карандашов А.Б.');
+
+insert into "Deliveries" ("Arrival_date", consignment_note_id, supplier_id, product_id, "Expiration_date") values
+('2025-09-01', 19803, 3, 3, '2025-12-01');
 
 
 INSERT INTO "Products" ("Product_name") VALUES
@@ -57,6 +76,17 @@ INSERT INTO "Deliveries" ("consignment_note_id", "Arrival_date", "supplier_id", 
 INSERT INTO "Receipts" ("Date", "Time", "waiter_id", "Receipt_amount", "client_id", "Payment_type") VALUES
 ('2023-10-07', '12:30:00', 1, 1000, 1, 'Наличные'),
 ('2023-10-07', '13:00:00', 2, 1500, 2, 'Карта');
+
+INSERT INTO "Receipts" ("Date", "Time", "waiter_id", "Receipt_amount", "client_id", "Payment_type") values
+('2023-11-23', '12:09:00', 1, 900, 1, 'Наличные'),
+('2023-09-23', '21:09:00', 3, 2000, 1, 'Наличные'),
+('2023-08-01', '16:00:00', 3, 1300, 1, 'Наличные'),
+('2023-08-02', '17:00:00', 3, 900, 1, 'Наличные');
+
+
+INSERT INTO "Receipts" ("Date", "Time", "waiter_id", "Receipt_amount", "client_id", "Payment_type") VALUES
+('2025-04-11', '9:30:00', 1, 1000, 1, 'Наличные'),
+('2023-04-11', '9:00:00', 2, 1500, 2, 'Карта');
 
 INSERT INTO "Sales" ("dish_id", "cook_id", "receipt_id", "Sale_amount") VALUES
 (1, 2, 1, 400),
