@@ -21,7 +21,7 @@ RIGHT JOIN "Receipts" R ON R.receipt_id = S.receipt_id
 -- Показывает декартово произведение клиентов и аллергенов(для возможной отметки всех аллергий клиентов)
 SELECT C.*, A."Allergen"
 FROM "Clients" c
-CROSS JOIN "Allergens" A
+CROSS JOIN "Allergens" A;
 
 -- Перебрать всех возможных клиентов и их возможных 2-х аллергенов
 SELECT C.*, Allergens.*
@@ -50,7 +50,7 @@ INTERSECT
 SELECT "Product_name" FROM "Products";
 
 
--- Вывести сначала официантов, потом поваров
+-- Вывести официантов и поваров
 SELECT E.*
 FROM "Employees" E
 WHERE E."Position" = 'Официант'
@@ -79,7 +79,7 @@ FROM "Products" P
 FULL JOIN "Warehouse" W ON P.product_id = W.product_id;
 
 -- Получить всех клиентов, которые сделали хотя бы один заказ
-SELECT C.client_id
+SELECT C.*
 FROM "Clients" C
 WHERE EXISTS (
     SELECT 1 FROM "Receipts" R WHERE R.client_id = C.client_id
@@ -104,7 +104,7 @@ WHERE "Discount_level" IN (2, 3);
 
 
 -- Самое(ые) дорогое блюдо
-SELECT "Name"
+SELECT "Name", "Price"
 FROM "Dishes"
 WHERE "Price" >= ALL (SELECT "Price" FROM "Dishes");
 
@@ -159,9 +159,14 @@ FROM "Deliveries";
 
 
 -- Получить чек с самой большой суммой заказа за сегодня
-SELECT * FROM "Receipts" R
-WHERE R."Receipt_amount" IN GREATEST(R."Receipt_amount")
-AND R."Date" = CURRENT_DATE;
+SELECT * 
+FROM "Receipts" R
+WHERE R."Receipt_amount" = ( 
+select GREATEST(R."Receipt_amount")
+from "Receipts" R
+where R."Date" = CURRENT_DATE
+);
+
 
 
 -- Выбрать самую последнюю поставку среди нескольких
@@ -227,10 +232,10 @@ SELECT
 FROM 
     "Dishes" d;
 
---Вывести всех клиентов, у которых номер телефона содержит 967
+--Вывести всех клиентов, у которых номер телефона содержит 900
 SELECT C.*
 FROM "Clients" C
-WHERE POSITION('967' IN C."Phone_number"::TEXT) > 0;
+WHERE POSITION('900' IN C."Phone_number"::TEXT) > 0;
 
 
 -- Замена имен
@@ -334,7 +339,7 @@ ORDER BY
 
 
 -- Средняя зарплата всех должностей сотрудников
-SELECT "Position", AVG("Salary")
+SELECT "Position", AVG("Salary") AS "AVG_salary"
 FROM "Employees"
 GROUP BY "Position";
 
@@ -359,5 +364,3 @@ FROM "Clients" C
 JOIN "Receipts" R ON C.client_id = R.client_id
 GROUP BY C.client_id
 HAVING COUNT(R.receipt_id) > 3;
-
-
