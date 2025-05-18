@@ -79,34 +79,110 @@ CREATE TRIGGER instead_of_insert_delivery
 INSTEAD OF INSERT ON "DeliveriesView"
 FOR EACH ROW EXECUTE FUNCTION process_delivery_instead_of();
 
+-- Тесты
+-- 1: Попытка вставить поставку с истекшим сроком годности (должна вызвать ошибку)
+INSERT INTO "DeliveriesView" (
+    "consignment_note_id",
+    "Arrival_date",
+    "supplier_id",
+    "product_id",
+    "Quantity",
+    "Expiration_date"
+) VALUES (
+    213498,
+    CURRENT_DATE,
+    1,
+    1,
+    10,
+    CURRENT_DATE - 1  -- Вчерашняя дата
+);
+
+
+
+-- 2: Попытка вставить поставку с истекающим сроком годности (менее 3 дней, должна вызвать ошибку)
+
+INSERT INTO "DeliveriesView" (
+    "consignment_note_id",
+    "Arrival_date",
+    "supplier_id",
+    "product_id",
+    "Quantity",
+    "Expiration_date"
+) VALUES (
+    2395798,
+    CURRENT_DATE,
+    1,
+    1,
+    10,
+    CURRENT_DATE + 2
+);
+
+
+
+-- 3: Успешная вставка поставки с нормальным сроком годности и проверка обновления склада
+
+-- Проверяем текущее количество на складе
+SELECT "Quantity_in_stock" FROM "WarehouseStatus" WHERE "product_id" = 1;
+
+-- Вставляем новую поставку
+INSERT INTO "DeliveriesView" (
+    "consignment_note_id",
+    "Arrival_date",
+    "supplier_id",
+    "product_id",
+    "Quantity",
+    "Expiration_date"
+) VALUES (
+    'TEST-003',
+    CURRENT_DATE,
+    1,
+    1,
+    15,
+    CURRENT_DATE + 30  -- Нормальный срок
+);
+
+-- Проверяем обновленное количество на складе
+SELECT "Quantity_in_stock" FROM "WarehouseStatus" WHERE "product_id" = 1;
+
+
+
 
 -- 2
 -- Функция для обновления уровня скидки клиента при добавлении продажи
-CREATE OR REPLACE FUNCTION update_client_discount_on_sale()
-RETURNS TRIGGER AS $$
+
+CREATE OR REPLACE FUNCTION public.update_client_discount_on_sale_change()
+RETURNS trigger AS $$
 DECLARE
     client_id_var INTEGER;
     current_discount SMALLINT;
     total_orders_var INTEGER;
     total_spent_var NUMERIC;
 BEGIN
-    -- Получаем client_id из связанного чека
-    SELECT r."client_id" INTO client_id_var
-    FROM "Receipts" r
-    WHERE r."receipt_id" = NEW."receipt_id";
+    -- Для DELETE получаем client_id из удаляемой записи
+    IF TG_OP = 'DELETE' THEN
+        SELECT r."client_id" INTO client_id_var
+        FROM "Receipts" r
+        WHERE r."receipt_id" = OLD."receipt_id";
+    ELSE
+        -- Для INSERT/UPDATE получаем client_id из новой записи
+        SELECT r."client_id" INTO client_id_var
+        FROM "Receipts" r
+        WHERE r."receipt_id" = NEW."receipt_id";
+    END IF;
     
     -- Если чек без клиента, выходим
     IF client_id_var IS NULL THEN
-        RETURN NEW;
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
     END IF;
     
-    -- Вычисляем общее количество заказов и сумму
+    -- Пересчитываем общее количество заказов и сумму (учитывая удаленные записи)
     SELECT 
         COUNT(r."receipt_id"),
         COALESCE(SUM(r."Receipt_amount"), 0)
     INTO total_orders_var, total_spent_var
     FROM "Receipts" r
-    WHERE r."client_id" = client_id_var;
+    WHERE r."client_id" = client_id_var
+    AND EXISTS (SELECT 1 FROM "Sales" s WHERE s."receipt_id" = r."receipt_id");
     
     -- Логика расчета скидки
     IF total_spent_var > 50000 THEN
@@ -124,57 +200,146 @@ BEGIN
     SET "Discount_level" = current_discount
     WHERE "client_id" = client_id_var;
     
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$ LANGUAGE plpgsql;
+
+-- AFTER INSERT OR DELETE OR UPDATE триггер для таблицы Sales
+CREATE OR REPLACE TRIGGER check_client_discount_on_sale_change
+AFTER INSERT OR DELETE OR UPDATE ON "Sales"
+FOR EACH ROW EXECUTE FUNCTION update_client_discount_on_sale_change();
+
+
+INSERT INTO "Clients" (client_id, "Discount_level", "Card_number", "Phone_number") VALUES 
+(9999956, 0, 2345456732443750, 79351993754);
+
+SELECT * FROM "Clients" 
+WHERE client_id = 9999956;
+
+INSERT INTO "Receipts"(receipt_id, "Date", "Time", client_id, "Receipt_amount", "Payment_type") VALUES
+(100345, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
+(100324, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
+(100346, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
+(100347, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта');
+
+
+INSERT INTO "Sales"(dish_id, receipt_id, "Sale_amount") VALUES
+(4, 100345, 1200),
+(78, 100324, 1200),
+(4, 100346, 1200),
+(4, 100347, 1200);
+
+-- Проверка уровня скидок(должен быть 1 так как количество чеков >3)
+SELECT * FROM "Clients" 
+WHERE client_id = 9999956;
+
+INSERT INTO "Sales"(dish_id, receipt_id, "Sale_amount") VALUES
+(4, 100345, 20000);
+
+-- Должен быть 2 потому что сумма чеков >20000 
+SELECT * FROM "Clients" 
+WHERE client_id = 9999956;
+
+INSERT INTO "Sales"(dish_id, receipt_id, "Sale_amount") VALUES
+(80, 100347, 40000);
+
+-- Должен быть 3
+SELECT * FROM "Clients" 
+WHERE client_id = 9999956;
+
+
+-- 3
+-- Проверка на уникальность имени блюда
+CREATE OR REPLACE FUNCTION check_dish_name_uniqueness()
+RETURNS TRIGGER AS $$
+DECLARE
+    normalized_name TEXT;
+    exists_count INTEGER;
+BEGIN
+    -- Нормализуем имя блюда: удаляем лишние пробелы и приводим к lowercase
+    normalized_name := LOWER(TRIM(REGEXP_REPLACE(NEW."Name", '\s+', ' ', 'g')));
+    
+    -- Проверяем, существует ли уже блюдо с таким именем
+    -- Для UPDATE исключаем из проверки текущую запись
+    SELECT COUNT(*) INTO exists_count
+    FROM "Dishes"
+    WHERE LOWER(TRIM(REGEXP_REPLACE("Name", '\s+', ' ', 'g'))) = normalized_name
+    AND (TG_OP = 'INSERT' OR dish_id <> NEW.dish_id);
+    
+    -- Если нашли совпадение (кроме текущей записи при UPDATE)
+    IF exists_count > 0 THEN
+        RAISE EXCEPTION 'Блюдо с именем "%" уже существует', normalized_name;
+    END IF;
+    
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- AFTER INSERT триггер для таблицы Sales
-CREATE TRIGGER check_client_discount_after_sale
-AFTER INSERT ON "Sales"
-FOR EACH ROW EXECUTE FUNCTION update_client_discount_on_sale();
+-- BEFORE триггер
+CREATE TRIGGER ensure_dish_name_unique
+BEFORE INSERT OR UPDATE OF "Name" ON "Dishes"
+FOR EACH ROW EXECUTE FUNCTION check_dish_name_uniqueness();
+
+-- Тест(Ошибка)
+INSERT INTO "Dishes"("Name", "Type", "Calories", "Price") VALUES
+('Салат ЦезаРь  ', 'Салат', 300, 400);
 
 
 -- для UPDATE
 -- 1
--- Представление клиентов с количеством заказов и потраченных денег
-CREATE VIEW clients_discount_view AS
-SELECT c."client_id", c."Discount_level", c."Card_number", c."Phone_number",
-       COUNT(r."receipt_id") AS total_orders,
-       SUM(r."Receipt_amount") AS total_spent
-FROM "Clients" c
-LEFT JOIN "Receipts" r ON c."client_id" = r."client_id"
-GROUP BY c."client_id";
-
--- Функция для обновления уровня скидки
-CREATE OR REPLACE FUNCTION update_client_discount()
+-- Валидация карты и номера телефона(только российские)
+CREATE OR REPLACE FUNCTION validate_client_data()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Автоматически рассчитываем уровень скидки на основе истории заказов
-    IF NEW."total_spent" > 50000 THEN
-        NEW."Discount_level" = 3;
-    ELSIF NEW."total_spent" > 20000 THEN
-        NEW."Discount_level" = 2;
-    ELSIF NEW."total_orders" > 3 THEN
-        NEW."Discount_level" = 1;
-    ELSE
-        NEW."Discount_level" = 0;
-    END IF;
     
-    -- Обновляем данные клиента
-    UPDATE "Clients"
-    SET "Discount_level" = NEW."Discount_level",
-        "Card_number" = NEW."Card_number",
-        "Phone_number" = NEW."Phone_number"
-    WHERE "client_id" = NEW."client_id";
+	-- Проверяем, изменились ли интересующие нас поля
+    -- Для операции INSERT всегда проверяем
+    IF TG_OP = 'INSERT' OR 
+       (TG_OP = 'UPDATE' AND (
+           (NEW."Phone_number" IS DISTINCT FROM OLD."Phone_number") OR
+           (NEW."Card_number" IS DISTINCT FROM OLD."Card_number")
+       )) THEN
+
+	    IF NEW."Phone_number" IS NOT NULL THEN
+	        -- Проверка, что номер начинается с 7 и имеет 11 цифр
+	        IF NOT (NEW."Phone_number" >= 70000000000 AND NEW."Phone_number" <= 79999999999) THEN
+	            RAISE EXCEPTION 'Некорректный номер телефона. Номер должен начинаться с 7 и содержать 11 цифр. Пример: 79161234567';
+	        END IF;
+	    END IF;
+	    
+	    -- Валидация номера карты
+	    IF NEW."Card_number" IS NOT NULL THEN
+	        -- Проверка, что номер карты состоит из 16 цифр
+	        IF NOT (NEW."Card_number" >= 1000000000000000 AND NEW."Card_number" <= 9999999999999999) THEN
+	            RAISE EXCEPTION 'Некорректный номер карты. Номер должен содержать ровно 16 цифр. Пример: 1234567890123456';
+	        END IF;
+	    END IF;
+	END IF;
     
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- INSTEAD OF триггер для обновления представления
-CREATE TRIGGER client_discount_trigger
-INSTEAD OF UPDATE ON clients_discount_view
-FOR EACH ROW EXECUTE FUNCTION update_client_discount();
+-- BEFORE триггер
+CREATE OR REPLACE TRIGGER validate_client_update
+BEFORE UPDATE OR INSERT ON "Clients"
+FOR EACH ROW EXECUTE FUNCTION validate_client_data();
+
+-- Ошибка
+UPDATE "Clients" SET "Phone_number" = 4567
+WHERE client_id = 10;
+
+-- Ошибка
+UPDATE "Clients" SET "Card_number" = 45672346958630914389246
+WHERE client_id = 10;
+
+-- Ошибка
+UPDATE "Clients" SET "Phone_number" = 45673546543
+WHERE client_id = 10;
+
+-- Без ошибок
+UPDATE "Clients" SET "Phone_number" = 74562850912
+WHERE client_id = 10;
 
 
 -- 2
@@ -214,68 +379,183 @@ AFTER INSERT OR UPDATE OR DELETE ON "Sales"
 FOR EACH ROW EXECUTE FUNCTION update_receipt_amount();
 
 
--- для DELETE
--- 1
--- Функция, чтобы при удалении блюда удаляются все записи с этим блюдом в Allergens_and_dishes
-CREATE OR REPLACE FUNCTION delete_dish_relations()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Удаляем все связи этого блюда с аллергенами
-    DELETE FROM "Allergens_and_dishes"
-    WHERE "dish_id" = OLD."dish_id";
-    
-    RETURN OLD;
-END;
-$$ LANGUAGE plpgsql;
+-- Тест
+SELECT * FROM "Receipts"
+WHERE receipt_id = 100;
 
--- AFTER DELETE триггер
-CREATE TRIGGER after_dish_delete
-AFTER DELETE ON "Dishes"
-FOR EACH ROW EXECUTE FUNCTION delete_dish_relations();
+INSERT INTO "Sales"(dish_id, receipt_id, "Sale_amount") VALUES
+(80, 100, 2000);
 
+SELECT * FROM "Receipts"
+WHERE receipt_id = 100;
 
--- 2
--- Функция: при удалении блюда удаляются связанные с ним строки в Dishes_and_Ingredients
-CREATE OR REPLACE FUNCTION delete_dish_ingredients()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Удаляем все связанные ингредиенты блюда
-    DELETE FROM "Dishes_and_Ingredients"
-    WHERE "dish_id" = OLD."dish_id";
-    
-    RETURN OLD;
-END;
-$$ LANGUAGE plpgsql;
-
--- AFTER DELETE триггер
-CREATE OR REPLACE TRIGGER after_dish_delete
-AFTER DELETE ON "Dishes"
-FOR EACH ROW EXECUTE FUNCTION delete_dish_ingredients();
 
 
 -- 3
--- Представление для чеков
-CREATE OR REPLACE VIEW receipts_view AS
-SELECT * FROM "Receipts";
+-- При замене длолжности сотрудника его опыт меняется или на тот, который был передан, или на больший на год
+-- Представление
+CREATE OR REPLACE VIEW employees_view AS
+SELECT * FROM "Employees";
 
--- Функция, чтобы удалять свзянные с чеком продажи при удалении чека
-CREATE OR REPLACE FUNCTION delete_receipt_with_sales()
+-- Функция
+CREATE OR REPLACE FUNCTION update_employee_position_instead()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Сначала удаляем все связанные продажи
-    DELETE FROM "Sales" 
-    WHERE "receipt_id" = OLD."receipt_id";
+    -- Если должность изменилась И новый опыт не указан (равен старому)
+    IF NEW."Position" IS DISTINCT FROM OLD."Position" AND 
+       NEW."Experience" = OLD."Experience" THEN
+        -- Увеличиваем опыт на 1 год
+        NEW."Experience" := OLD."Experience" + 1;
+    END IF;
     
-    -- Затем удаляем сам чек
-    DELETE FROM "Receipts" 
-    WHERE "receipt_id" = OLD."receipt_id";
+    -- Если опыт указан явно - оставляем как есть
     
-    -- Возвращаем удаленную запись
+    
+    UPDATE "Employees" SET
+        "Position" = NEW."Position",
+        "Full_name" = NEW."Full_name",
+        "Experience" = NEW."Experience",
+        "Phone_number" = NEW."Phone_number",
+        "Salary" = NEW."Salary"
+    WHERE "employee_id" = OLD."employee_id";
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Триггер
+CREATE TRIGGER employees_position_update
+INSTEAD OF UPDATE ON employees_view
+FOR EACH ROW
+EXECUTE FUNCTION update_employee_position_instead();
+
+-- Тест
+-- Смотрим опыт
+SELECT * FROM employees_view
+WHERE employee_id = 24;
+
+-- Меняем должность
+UPDATE employees_view 
+SET "Position" = 'Директор'
+WHERE employee_id = 24;
+
+-- Опыт увеличился на 1
+SELECT * FROM employees_view
+WHERE employee_id = 24;
+
+
+
+-- для DELETE
+-- 1 Вместо удаления сотрудников из Employees будем переносить их в таблицу с бывшими сторудниками
+CREATE TABLE "FormerEmployees" (
+    "employee_id" INTEGER PRIMARY KEY,
+    "Position" TEXT NOT NULL,
+    "Full_name" TEXT NOT NULL,
+    "Experience" SMALLINT NOT NULL,
+    "Phone_number" BIGINT NOT NULL,
+    "Salary" INTEGER,
+    "Termination_date" DATE NOT NULL DEFAULT CURRENT_DATE,
+    "Termination_reason" TEXT
+);
+
+-- Представление
+CREATE OR REPLACE VIEW employees_view AS
+SELECT * FROM "Employees";
+
+-- Функция
+CREATE OR REPLACE FUNCTION archive_employee_instead()
+RETURNS TRIGGER AS $$
+DECLARE
+    termination_reason TEXT := 'По собственному желанию';
+BEGIN
+
+	BEGIN
+        termination_reason := current_setting('terminal.reason');
+    EXCEPTION WHEN undefined_object THEN
+        termination_reason := 'По собственному желанию'; -- По умолчанию
+    END;
+
+
+	-- Обновляем ссылки на поваров в Sales перед удалением
+    UPDATE "Sales" SET "cook_id" = NULL 
+    WHERE "cook_id" = OLD."employee_id";
+
+	-- -- Обновляем ссылки на официантов в Receipts перед удалением
+    UPDATE "Receipts" SET "waiter_id" = NULL 
+    WHERE "waiter_id" = OLD."employee_id";
+
+	
+    -- Переносим сотрудника в таблицу бывших сотрудников
+    INSERT INTO "FormerEmployees" (
+        "employee_id",
+        "Position",
+        "Full_name",
+        "Experience",
+        "Phone_number",
+        "Salary",
+        "Termination_reason"
+    ) VALUES (
+        OLD."employee_id",
+        OLD."Position",
+        OLD."Full_name",
+        OLD."Experience",
+        OLD."Phone_number",
+        OLD."Salary",
+        termination_reason
+    );
+    
+    -- Удаляем из основной таблицы
+    DELETE FROM "Employees"
+    WHERE "employee_id" = OLD."employee_id";
+    
+
     RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
 
--- INSTEAD OF DELETE триггер
-CREATE TRIGGER instead_of_receipt_delete
-INSTEAD OF DELETE ON receipts_view
-FOR EACH ROW EXECUTE FUNCTION delete_receipt_with_sales();
+
+CREATE OR REPLACE TRIGGER archive_employee_instead_of_delete
+INSTEAD OF DELETE ON employees_view
+FOR EACH ROW
+EXECUTE FUNCTION archive_employee_instead();
+
+-- Тест
+SELECT * FROM "Receipts" r 
+WHERE waiter_id = 46;
+
+DELETE FROM employees_view WHERE "employee_id" = 46;
+
+-- Проверяем, что в таблице Receipts теперь NULL
+SELECT * FROM "Receipts" r 
+WHERE waiter_id = 46;
+
+
+-- Увольняем по другой причине
+SELECT * FROM "Employees" 
+WHERE employee_id = 92;
+
+BEGIN;
+
+SET LOCAL terminal.reason = 'Плохо поработал';
+
+DELETE FROM employees_view 
+WHERE employee_id = 92;
+
+COMMIT;
+
+-- Проверяем, остался ли сотрудник в employees
+SELECT * FROM "Employees" 
+WHERE employee_id = 92;
+
+-- Смотрим причину увольнения
+SELECT * FROM "FormerEmployees";
+
+
+
+
+-- 2
+
+
+
+
+-- 3
