@@ -69,7 +69,7 @@ CREATE TABLE "Employees" (
 CREATE TABLE "Sales" (
 	"sale_id" SERIAL,
 	"dish_id" INTEGER NOT NULL,
-	"cook_id" INTEGER NOT NULL,
+	"cook_id" INTEGER,
 	"receipt_id" INTEGER NOT NULL,
 	"Sale_amount" REAL NOT NULL,
 	PRIMARY KEY("sale_id")
