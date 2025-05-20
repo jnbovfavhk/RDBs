@@ -653,11 +653,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- BEFORE триггер
 CREATE OR REPLACE TRIGGER before_delivery_delete_warner
 BEFORE DELETE ON "Deliveries"
 FOR EACH ROW
 EXECUTE FUNCTION warn_delivery_deletion();
 
+-- Тест
 INSERT INTO "Deliveries"(consignment_note_id, "Arrival_date", supplier_id, product_id, "Quantity", "Expiration_date") VALUES
 (999990, '2025-05-20', 1, 1, 100, '2025-06-10');
 
