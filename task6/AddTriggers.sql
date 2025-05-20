@@ -555,7 +555,114 @@ SELECT * FROM "FormerEmployees";
 
 -- 2
 
+SELECT * FROM "WarehouseStatus" ws 
+WHERE product_id = 1233;
+SELECT * FROM "Warehouse" w
+WHERE product_id = 1233;
+
+
+-- При удалении строки в Deliveries, делаем запись в Warehouse
+CREATE OR REPLACE FUNCTION update_warehouse_after_delivery_delete()
+RETURNS TRIGGER AS $$
+DECLARE
+    current_quantity INTEGER;
+	warehouse_type TEXT;
+BEGIN
+    -- Получаем текущее количество товара из представления
+    SELECT "Quantity_in_stock" INTO current_quantity
+    FROM "WarehouseStatus"
+    WHERE "product_id" = OLD."product_id"
+    LIMIT 1;
+    
+
+    -- Рассчитываем новое количество
+    current_quantity := COALESCE(current_quantity, 0) - OLD."Quantity";
+
+
+	-- Проверка на отрицательное количество (защита от ошибок)
+    IF current_quantity < 0 THEN
+        RAISE WARNING 'Отрицательное количество товара % после удаления поставки. Установлено 0.', OLD."product_id";
+        current_quantity := 0;
+    END IF;
+    
+	-- Ищем тип склада, который был у продукта из поставки
+	SELECT "Warehouse_type" FROM "WarehouseStatus"
+	WHERE "product_id" = OLD."product_id"
+	LIMIT 1 
+	INTO warehouse_type;
+
+	warehouse_type := COALESCE(warehouse_type, 'Основной');
+
+    -- Создаем новую запись или обновляем существующую
+    INSERT INTO "Warehouse" (
+        "product_id",
+        "Quantity_in_stock",
+        "Date",
+        "Warehouse_type"
+    ) VALUES (
+        OLD."product_id",
+        current_quantity,
+        CURRENT_DATE,
+        warehouse_type
+    );
+    
+    
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+    
+-- AFTER триггер
+CREATE OR REPLACE TRIGGER after_delivery_delete_stock
+AFTER DELETE ON "Deliveries"
+FOR EACH ROW
+EXECUTE FUNCTION update_warehouse_after_delivery_delete();
+
+-- Тест
+-- Ищем тестовый продукт
+SELECT * FROM "WarehouseStatus" ws 
+WHERE product_id = 1233;
+
+SELECT * FROM "Deliveries" d 
+WHERE product_id = 1233;
+
+-- Удаляем
+DELETE FROM "Deliveries"
+WHERE consignment_note_id = 16263;
+
+-- Проверяем, что поставки больше нет
+SELECT * FROM "Deliveries" d 
+WHERE product_id = 1233;
+
+-- Проверяем, что теперь на складе меньшее количество
+SELECT * FROM "WarehouseStatus" ws 
+WHERE product_id = 1233;
 
 
 
 -- 3
+-- Предупреждает об удалении поставки, которой меньше 7 дней
+CREATE OR REPLACE FUNCTION warn_delivery_deletion()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- BEFORE-логика
+    IF OLD."Arrival_date" > CURRENT_DATE - INTERVAL '7 days' THEN
+        RAISE WARNING 'Удаляется свежая поставка (ID: %)', OLD."consignment_note_id";
+    END IF;
+	
+	RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER before_delivery_delete_warner
+BEFORE DELETE ON "Deliveries"
+FOR EACH ROW
+EXECUTE FUNCTION warn_delivery_deletion();
+
+INSERT INTO "Deliveries"(consignment_note_id, "Arrival_date", supplier_id, product_id, "Quantity", "Expiration_date") VALUES
+(999990, '2025-05-20', 1, 1, 100, '2025-06-10');
+
+SELECT * FROM "Deliveries" d
+WHERE "Arrival_date" = '2025-05-20';
+
+DELETE FROM "Deliveries"
+WHERE consignment_note_id = 999990;
