@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 # Настройки подключения
 conn_params = {
     'dbname': "postgres",
-    'user': "postgres",
-    'password': "jnuaLFFert",
+    'user': "contest",
+    'password': "contest",
     'host': "localhost"
 }
 
