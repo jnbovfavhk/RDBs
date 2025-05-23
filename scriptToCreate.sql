@@ -11,8 +11,7 @@ CREATE TABLE "Warehouse" (
 	"product_id" INTEGER,
 	"Quantity_in_stock" INTEGER,
 	"Date" DATE NOT NULL,
-	"Warehouse_type" TEXT NOT NULL,
-	PRIMARY KEY("product_id")
+	"Warehouse_type" TEXT NOT NULL
 );
 
 
