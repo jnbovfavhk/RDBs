@@ -1,3 +1,27 @@
+create table "Constants" (
+constant_text_description TEXT,
+constant_value INTEGER
+);
+
+insert into "Constants" values (
+'Наименьший срок годности товара в поставке исекает через', 3
+);
+
+insert into "Constants"(constant_text_description, constant_value) values 
+('Наименьшая сумма чеков для уровня скидок 3', 50000),
+('Наименьшая сумма чеков для уровня скидок 2', 20000),
+('Наименьшая количество чеков для уровня скидок 1', 3);
+
+insert into "Constants"(constant_text_description, constant_value) values 
+('Телефон клиента должен начинаться с', 7),
+('Телефон клиента должен иметь длину', 11);
+
+insert into "Constants"(constant_text_description, constant_value) values 
+('На сколько меняется опыт сотрудника при изменении его должности', 1);
+
+
+
+select * from "Constants";
 -- Для INSERT
 -- 1
 -- Представление таблицы доставок
@@ -9,8 +33,12 @@ CREATE OR REPLACE FUNCTION process_delivery_instead_of()
 RETURNS TRIGGER AS $$
 DECLARE
     last_quantity INTEGER;
-	min_expiry_days INTEGER := 3;
+	min_expiry_days INTEGER;
 BEGIN
+
+	SELECT constant_value FROM "Constants"
+	WHERE constant_text_description = 'Наименьший срок годности товара в поставке исекает через'
+	INTO min_expiry_days;
 
 
 	-- Проверка срока годности
@@ -64,18 +92,14 @@ BEGIN
         last_quantity + NEW."Quantity",
         NEW."Arrival_date",
         'Основной'
-    )
-    ON CONFLICT ("product_id") 
-    DO UPDATE SET
-        "Quantity_in_stock" = EXCLUDED."Quantity_in_stock",
-        "Date" = EXCLUDED."Date";
+    );
     
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 -- INSTEAD OF триггер для INSERT в представление
-CREATE TRIGGER instead_of_insert_delivery
+CREATE or replace TRIGGER instead_of_insert_delivery
 INSTEAD OF INSERT ON "DeliveriesView"
 FOR EACH ROW EXECUTE FUNCTION process_delivery_instead_of();
 
@@ -122,7 +146,7 @@ INSERT INTO "DeliveriesView" (
 -- 3: Успешная вставка поставки с нормальным сроком годности и проверка обновления склада
 
 -- Проверяем текущее количество на складе
-SELECT "Quantity_in_stock" FROM "WarehouseStatus" WHERE "product_id" = 1;
+SELECT "Quantity_in_stock" FROM "WarehouseStatus" WHERE "product_id" = 7;
 
 -- Вставляем новую поставку
 INSERT INTO "DeliveriesView" (
@@ -133,16 +157,16 @@ INSERT INTO "DeliveriesView" (
     "Quantity",
     "Expiration_date"
 ) VALUES (
-    'TEST-003',
+    2461287,
     CURRENT_DATE,
-    1,
-    1,
+    3,
+    7,
     15,
     CURRENT_DATE + 30  -- Нормальный срок
 );
 
 -- Проверяем обновленное количество на складе
-SELECT "Quantity_in_stock" FROM "WarehouseStatus" WHERE "product_id" = 1;
+SELECT "Quantity_in_stock" FROM "WarehouseStatus" WHERE "product_id" = 7;
 
 
 
@@ -157,7 +181,28 @@ DECLARE
     current_discount SMALLINT;
     total_orders_var INTEGER;
     total_spent_var NUMERIC;
+
+	discont_3_border_total_spent INTEGER;
+	discont_2_border_total_spent INTEGER;
+	discont_1_border_total_orders INTEGER;
+
 BEGIN
+
+	-- Определяем переменные
+	SELECT constant_value FROM "Constants"
+	WHERE constant_text_description = 'Наименьшая сумма чеков для уровня скидок 3'
+	INTO discont_3_border_total_spent;
+
+	SELECT constant_value FROM "Constants"
+	WHERE constant_text_description = 'Наименьшая сумма чеков для уровня скидок 2'
+	INTO discont_2_border_total_spent;
+
+	SELECT constant_value FROM "Constants"
+	WHERE constant_text_description = 'Наименьшая сумма чеков для уровня скидок 1'
+	INTO discont_1_border_total_orders;
+
+
+	
     -- Для DELETE получаем client_id из удаляемой записи
     IF TG_OP = 'DELETE' THEN
         SELECT r."client_id" INTO client_id_var
@@ -185,11 +230,11 @@ BEGIN
     AND EXISTS (SELECT 1 FROM "Sales" s WHERE s."receipt_id" = r."receipt_id");
     
     -- Логика расчета скидки
-    IF total_spent_var > 50000 THEN
+    IF total_spent_var > discont_3_border_total_spent THEN
         current_discount := 3;
-    ELSIF total_spent_var > 20000 THEN
+    ELSIF total_spent_var > discont_2_border_total_spent THEN
         current_discount := 2;
-    ELSIF total_orders_var > 3 THEN
+    ELSIF total_orders_var > discont_1_border_total_orders THEN
         current_discount := 1;
     ELSE
         current_discount := 0;
@@ -290,8 +335,19 @@ INSERT INTO "Dishes"("Name", "Type", "Calories", "Price") VALUES
 -- Валидация карты и номера телефона(только российские)
 CREATE OR REPLACE FUNCTION validate_client_data()
 RETURNS TRIGGER AS $$
+DECLARE 
+	phone_start_with INTEGER;
+	phone_length INTEGER;
 BEGIN
     
+	SELECT constant_value FROM "Constants" 
+	WHERE constant_text_description = 'Телефон клиента должен начинаться с'
+	INTO phone_start_with;
+
+	SELECT constant_value FROM "Constants" 
+	WHERE constant_text_description = 'Телефон клиента должен иметь длину'
+	INTO phone_length;
+	
 	-- Проверяем, изменились ли интересующие нас поля
     -- Для операции INSERT всегда проверяем
     IF TG_OP = 'INSERT' OR 
@@ -302,8 +358,9 @@ BEGIN
 
 	    IF NEW."Phone_number" IS NOT NULL THEN
 	        -- Проверка, что номер начинается с 7 и имеет 11 цифр
-	        IF NOT (NEW."Phone_number" >= 70000000000 AND NEW."Phone_number" <= 79999999999) THEN
-	            RAISE EXCEPTION 'Некорректный номер телефона. Номер должен начинаться с 7 и содержать 11 цифр. Пример: 79161234567';
+	        IF NOT (NEW."Phone_number" >= phone_start_with * POWER(10, phone_length) 
+				AND (NEW."Phone_number" <= phone_start_with * POWER(10, phone_length) + (POWER(10, phone_length) - 1))) THEN
+	            RAISE EXCEPTION 'Некорректный номер телефона. Номер должен начинаться с % и содержать % цифр', phone_start_with, phone_length;
 	        END IF;
 	    END IF;
 	    
@@ -330,7 +387,7 @@ UPDATE "Clients" SET "Phone_number" = 4567
 WHERE client_id = 10;
 
 -- Ошибка
-UPDATE "Clients" SET "Card_number" = 45672346958630914389246
+UPDATE "Clients" SET "Card_number" = 456723469586309143
 WHERE client_id = 10;
 
 -- Ошибка
@@ -374,7 +431,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- AFTER триггер для всех операций
-CREATE TRIGGER sales_change_trigger
+CREATE OR replace TRIGGER sales_change_trigger
 AFTER INSERT OR UPDATE OR DELETE ON "Sales"
 FOR EACH ROW EXECUTE FUNCTION update_receipt_amount();
 
@@ -400,12 +457,19 @@ SELECT * FROM "Employees";
 -- Функция
 CREATE OR REPLACE FUNCTION update_employee_position_instead()
 RETURNS TRIGGER AS $$
+DECLARE 
+	change_year INTEGER;
 BEGIN
+
+	SELECT constant_value FROM "Constants"
+	WHERE constant_text_description = 'На сколько меняется опыт сотрудника при изменении его должности'
+	INTO change_year;
+
     -- Если должность изменилась И новый опыт не указан (равен старому)
     IF NEW."Position" IS DISTINCT FROM OLD."Position" AND 
        NEW."Experience" = OLD."Experience" THEN
         -- Увеличиваем опыт на 1 год
-        NEW."Experience" := OLD."Experience" + 1;
+        NEW."Experience" := OLD."Experience" + change_year;
     END IF;
     
     -- Если опыт указан явно - оставляем как есть
@@ -432,18 +496,28 @@ EXECUTE FUNCTION update_employee_position_instead();
 -- Тест
 -- Смотрим опыт
 SELECT * FROM employees_view
-WHERE employee_id = 24;
+WHERE employee_id = 25;
 
 -- Меняем должность
 UPDATE employees_view 
 SET "Position" = 'Директор'
-WHERE employee_id = 24;
+WHERE employee_id = 25;
 
 -- Опыт увеличился на 1
 SELECT * FROM employees_view
-WHERE employee_id = 24;
+WHERE employee_id = 25;
 
 
+create table "Text_constants" (
+description TEXT,
+value TEXT
+);
+
+insert into "Text_constants" values
+('Уведомлять при уведомлении поставки моложе', '7 days');
+
+insert into "Text_constants" values
+('Причина увольнения сотрудника по умолчанию', 'По собственному желанию');
 
 -- для DELETE
 -- 1 Вместо удаления сотрудников из Employees будем переносить их в таблицу с бывшими сторудниками
@@ -466,13 +540,17 @@ SELECT * FROM "Employees";
 CREATE OR REPLACE FUNCTION archive_employee_instead()
 RETURNS TRIGGER AS $$
 DECLARE
-    termination_reason TEXT := 'По собственному желанию';
+	termination_reason TEXT;
+    termination_reason_default TEXT;
 BEGIN
+	SELECT value FROM "Text_constants"
+	WHERE description = 'Причина увольнения сотрудника по умолчанию'
+	INTO termination_reason_default;
 
 	BEGIN
         termination_reason := current_setting('terminal.reason');
     EXCEPTION WHEN undefined_object THEN
-        termination_reason := 'По собственному желанию'; -- По умолчанию
+        termination_reason := termination_reason_default; -- По умолчанию
     END;
 
 
@@ -521,13 +599,13 @@ EXECUTE FUNCTION archive_employee_instead();
 
 -- Тест
 SELECT * FROM "Receipts" r 
-WHERE waiter_id = 46;
+WHERE waiter_id = 47;
 
-DELETE FROM employees_view WHERE "employee_id" = 46;
+DELETE FROM employees_view WHERE "employee_id" = 47;
 
 -- Проверяем, что в таблице Receipts теперь NULL
 SELECT * FROM "Receipts" r 
-WHERE waiter_id = 46;
+WHERE waiter_id = 47;
 
 
 -- Увольняем по другой причине
@@ -640,12 +718,19 @@ WHERE product_id = 1233;
 
 
 -- 3
+
 -- Предупреждает об удалении поставки, которой меньше 7 дней
 CREATE OR REPLACE FUNCTION warn_delivery_deletion()
 RETURNS TRIGGER AS $$
+DECLARE 
+	notification TEXT;
 BEGIN
+
+	SELECT value FROM "Text_constants"
+	WHERE description = 'Уведомлять при уведомлении поставки моложе'
+	into notification;
     -- BEFORE-логика
-    IF OLD."Arrival_date" > CURRENT_DATE - INTERVAL '7 days' THEN
+    IF OLD."Arrival_date" > CURRENT_DATE - notification::INTERVAL THEN
         RAISE WARNING 'Удаляется свежая поставка (ID: %)', OLD."consignment_note_id";
     END IF;
 	
