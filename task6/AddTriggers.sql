@@ -198,7 +198,7 @@ BEGIN
 	INTO discont_2_border_total_spent;
 
 	SELECT constant_value FROM "Constants"
-	WHERE constant_text_description = 'Наименьшая сумма чеков для уровня скидок 1'
+	WHERE constant_text_description = 'Наименьшее количество чеков для уровня скидок 1'
 	INTO discont_1_border_total_orders;
 
 
@@ -255,6 +255,8 @@ AFTER INSERT OR DELETE OR UPDATE ON "Sales"
 FOR EACH ROW EXECUTE FUNCTION update_client_discount_on_sale_change();
 
 
+
+
 INSERT INTO "Clients" (client_id, "Discount_level", "Card_number", "Phone_number") VALUES 
 (9999956, 0, 2345456732443750, 79351993754);
 
@@ -262,10 +264,10 @@ SELECT * FROM "Clients"
 WHERE client_id = 9999956;
 
 INSERT INTO "Receipts"(receipt_id, "Date", "Time", client_id, "Receipt_amount", "Payment_type") VALUES
-(100345, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
-(100324, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
-(100346, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
-(100347, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта');
+(100500, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
+(100501, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
+(100502, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
+(100503, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта');
 
 
 INSERT INTO "Sales"(dish_id, receipt_id, "Sale_amount") VALUES
@@ -274,12 +276,15 @@ INSERT INTO "Sales"(dish_id, receipt_id, "Sale_amount") VALUES
 (4, 100346, 1200),
 (4, 100347, 1200);
 
+select * from "Receipts" c 
+where c.client_id = 9999956;
+
 -- Проверка уровня скидок(должен быть 1 так как количество чеков >3)
 SELECT * FROM "Clients" 
 WHERE client_id = 9999956;
 
-INSERT INTO "Sales"(dish_id, receipt_id, "Sale_amount") VALUES
-(4, 100345, 20000);
+INSERT INTO "Receipts"(receipt_id, "Date", "Time", client_id, "Receipt_amount", "Payment_type") VALUES
+(100504, CURRENT_DATE, CURRENT_TIME, 9999956, 20000, 'Карта');
 
 -- Должен быть 2 потому что сумма чеков >20000 
 SELECT * FROM "Clients" 
@@ -358,8 +363,8 @@ BEGIN
 
 	    IF NEW."Phone_number" IS NOT NULL THEN
 	        -- Проверка, что номер начинается с 7 и имеет 11 цифр
-	        IF NOT (NEW."Phone_number" >= phone_start_with * POWER(10, phone_length) 
-				AND (NEW."Phone_number" <= phone_start_with * POWER(10, phone_length) + (POWER(10, phone_length) - 1))) THEN
+	        IF NOT (NEW."Phone_number" >= phone_start_with * POWER(10, phone_length - 1) 
+				AND (NEW."Phone_number" <= phone_start_with * POWER(10, phone_length - 1) + (POWER(10, phone_length - 1) - 1))) THEN
 	            RAISE EXCEPTION 'Некорректный номер телефона. Номер должен начинаться с % и содержать % цифр', phone_start_with, phone_length;
 	        END IF;
 	    END IF;
@@ -520,17 +525,22 @@ insert into "Text_constants" values
 ('Причина увольнения сотрудника по умолчанию', 'По собственному желанию');
 
 -- для DELETE
--- 1 Вместо удаления сотрудников из Employees будем переносить их в таблицу с бывшими сторудниками
-CREATE TABLE "FormerEmployees" (
-    "employee_id" INTEGER PRIMARY KEY,
-    "Position" TEXT NOT NULL,
-    "Full_name" TEXT NOT NULL,
-    "Experience" SMALLINT NOT NULL,
-    "Phone_number" BIGINT NOT NULL,
-    "Salary" INTEGER,
-    "Termination_date" DATE NOT NULL DEFAULT CURRENT_DATE,
-    "Termination_reason" TEXT
-);
+-- 1 Вместо удаления сотрудников из Employees будем изменять у них поле hiring
+-- Изменяем исходную таблицу
+alter table "Employees"
+add column hiring BOOLEAN;
+
+alter table "Employees"
+add column termination_reason TEXT;
+
+update "Employees" 
+set hiring = true;
+
+
+SELECT value FROM "Text_constants"
+WHERE description = 'Причина увольнения сотрудника по умолчанию'
+LIMIT 1;
+
 
 -- Представление
 CREATE OR REPLACE VIEW employees_view AS
@@ -545,6 +555,7 @@ DECLARE
 BEGIN
 	SELECT value FROM "Text_constants"
 	WHERE description = 'Причина увольнения сотрудника по умолчанию'
+	LIMIT 1
 	INTO termination_reason_default;
 
 	BEGIN
@@ -553,40 +564,11 @@ BEGIN
         termination_reason := termination_reason_default; -- По умолчанию
     END;
 
-
-	-- Обновляем ссылки на поваров в Sales перед удалением
-    UPDATE "Sales" SET "cook_id" = NULL 
-    WHERE "cook_id" = OLD."employee_id";
-
-	-- -- Обновляем ссылки на официантов в Receipts перед удалением
-    UPDATE "Receipts" SET "waiter_id" = NULL 
-    WHERE "waiter_id" = OLD."employee_id";
-
 	
-    -- Переносим сотрудника в таблицу бывших сотрудников
-    INSERT INTO "FormerEmployees" (
-        "employee_id",
-        "Position",
-        "Full_name",
-        "Experience",
-        "Phone_number",
-        "Salary",
-        "Termination_reason"
-    ) VALUES (
-        OLD."employee_id",
-        OLD."Position",
-        OLD."Full_name",
-        OLD."Experience",
-        OLD."Phone_number",
-        OLD."Salary",
-        termination_reason
-    );
+    UPDATE "Employees"
+	SET hiring = FALSE
+	WHERE employee_id = OLD.employee_id;
     
-    -- Удаляем из основной таблицы
-    DELETE FROM "Employees"
-    WHERE "employee_id" = OLD."employee_id";
-    
-
     RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
@@ -598,14 +580,14 @@ FOR EACH ROW
 EXECUTE FUNCTION archive_employee_instead();
 
 -- Тест
-SELECT * FROM "Receipts" r 
-WHERE waiter_id = 47;
+SELECT * FROM employees_view 
+WHERE employee_id = 48;
 
-DELETE FROM employees_view WHERE "employee_id" = 47;
+DELETE FROM employees_view WHERE "employee_id" = 48;
 
--- Проверяем, что в таблице Receipts теперь NULL
-SELECT * FROM "Receipts" r 
-WHERE waiter_id = 47;
+-- Проверяем, что в таблице hiring теперь false
+SELECT * FROM employees_view 
+where employee_id = 48;
 
 
 -- Увольняем по другой причине
@@ -634,9 +616,9 @@ SELECT * FROM "FormerEmployees";
 -- 2
 
 SELECT * FROM "WarehouseStatus" ws 
-WHERE product_id = 1233;
+WHERE product_id = 1257;
 SELECT * FROM "Warehouse" w
-WHERE product_id = 1233;
+WHERE product_id = 1257;
 
 
 -- При удалении строки в Deliveries, делаем запись в Warehouse
@@ -698,22 +680,22 @@ EXECUTE FUNCTION update_warehouse_after_delivery_delete();
 -- Тест
 -- Ищем тестовый продукт
 SELECT * FROM "WarehouseStatus" ws 
-WHERE product_id = 1233;
+WHERE product_id = 1213;
 
 SELECT * FROM "Deliveries" d 
-WHERE product_id = 1233;
+WHERE product_id = 1213;
 
 -- Удаляем
 DELETE FROM "Deliveries"
-WHERE consignment_note_id = 16263;
+WHERE consignment_note_id = 30842;
 
 -- Проверяем, что поставки больше нет
 SELECT * FROM "Deliveries" d 
-WHERE product_id = 1233;
+WHERE product_id = 1213;
 
 -- Проверяем, что теперь на складе меньшее количество
 SELECT * FROM "WarehouseStatus" ws 
-WHERE product_id = 1233;
+WHERE product_id = 1213;
 
 
 
