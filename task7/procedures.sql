@@ -91,82 +91,91 @@ SELECT * FROM check_allergens_by_dish_name('Салат Цезарь');
 
 
 -- Процедуры
+INSERT INTO "Constants" VALUES 
+('Бонус сотрудникам за каждое приготовленное ими блюдо', 20),
+('Бонус сотрудникам за каждый отпущенный чек', 15);
 
 -- Функция для счета зарплаты сотрудникам, включая бонусы
 CREATE OR REPLACE FUNCTION calculate_salary_with_bonuses(
-    search_month INTEGER,
-    search_year INTEGER
-)
-RETURNS TABLE (
+    month INTEGER,
+    year INTEGER
+) RETURNS TABLE (
     employee_id INTEGER,
     full_name TEXT,
     job_position TEXT,
     base_salary NUMERIC(10,2),
-    bonus NUMERIC(10,2),
+    dishes_bonus NUMERIC(10,2),
+    receipts_bonus NUMERIC(10,2),
+    total_bonus NUMERIC(10,2),
     total_salary NUMERIC(10,2)
 ) AS $$
+DECLARE
+    dish_bonus_rate NUMERIC(10,2);
+    receipt_bonus_rate NUMERIC(10,2);
 BEGIN
+    -- Получаем ставки бонусов
+    SELECT constant_value::NUMERIC(10,2) INTO dish_bonus_rate
+    FROM "Constants"
+    WHERE constant_text_description = 'Бонус сотрудникам за каждое приготовленное ими блюдо';
+    
+    SELECT constant_value::NUMERIC(10,2) INTO receipt_bonus_rate
+    FROM "Constants"
+    WHERE constant_text_description = 'Бонус сотрудникам за каждый отпущенный чек';
+    
     RETURN QUERY
-    WITH 
-    -- Считаем блюда поваров за период и добавляем каждому к зп по 15 руб за одно
-    cook_stats AS (
-        SELECT 
-            s."cook_id" AS employee_id,
-            COUNT(*) * 15 AS bonus_value
-        FROM "Sales" s
-        JOIN "Receipts" r ON s."receipt_id" = r."receipt_id"
-        WHERE EXTRACT(MONTH FROM r."Date") = search_month
-        AND EXTRACT(YEAR FROM r."Date") = search_year
-        GROUP BY s."cook_id"
-    ),
-    -- Считаем чеки официантов за период и добавляем по 10 руб за каждый
-    waiter_stats AS (
-        SELECT 
-            r."waiter_id" AS employee_id,
-            COUNT(*) * 10 AS bonus_value
-        FROM "Receipts" r
-        WHERE EXTRACT(MONTH FROM r."Date") = search_month
-        AND EXTRACT(YEAR FROM r."Date") = search_year
-        GROUP BY r."waiter_id"
-    )
     SELECT 
-        e."employee_id",
+        e.employee_id,
         e."Full_name",
         e."Position",
-        e."Salary"::NUMERIC(10,2),
-        COALESCE(
-            CASE
-                WHEN e."Position" = 'Повар' THEN cs.bonus_value
-                WHEN e."Position" = 'Официант' THEN ws.bonus_value
-                ELSE 0
-            END, 0
-        )::NUMERIC(10,2) AS bonus,
-        e."Salary"::NUMERIC(10,2) + COALESCE(
-            CASE
-                WHEN e."Position" = 'Повар' THEN cs.bonus_value
-                WHEN e."Position" = 'Официант' THEN ws.bonus_value
-                ELSE 0
-            END, 0
-        )::NUMERIC(10,2) AS total_salary
-    FROM 
-        "Employees" e
-    LEFT JOIN cook_stats cs ON e."employee_id" = cs.employee_id AND e."Position" = 'Повар'
-    LEFT JOIN waiter_stats ws ON e."employee_id" = ws.employee_id AND e."Position" = 'Официант'
-    ORDER BY 
-        e."Full_name";
+        e."Salary"::NUMERIC(10,2) AS base_salary,
+        
+        -- Бонус за блюда
+        COALESCE(dish_bonuses.dishes_count * dish_bonus_rate, 0) AS dishes_bonus,
+        
+        -- Бонус за чеки
+        COALESCE(receipt_bonuses.receipts_count * receipt_bonus_rate, 0) AS receipts_bonus,
+        
+        -- Общий бонус
+        COALESCE(dish_bonuses.dishes_count * dish_bonus_rate, 0) + COALESCE(receipt_bonuses.receipts_count * receipt_bonus_rate, 0) AS total_bonus,
+        
+        -- Итоговая зарплата(основная плюс общий бонус)
+        e."Salary"::NUMERIC(10,2) + 
+        COALESCE(dish_bonuses.dishes_count * dish_bonus_rate, 0) + 
+        COALESCE(receipt_bonuses.receipts_count * receipt_bonus_rate, 0) AS total_salary
+    FROM "Employees" e
+
+    LEFT JOIN (
+		-- Подзапрос для подсчета количества приготовленных блюд 
+        SELECT s.cook_id, COUNT(*) AS dishes_count
+        FROM "Sales" s
+        JOIN "Receipts" r ON s.receipt_id = r.receipt_id
+        WHERE EXTRACT(MONTH FROM r."Date") = month
+          AND EXTRACT(YEAR FROM r."Date") = year
+        GROUP BY s.cook_id
+    ) dish_bonuses ON dish_bonuses.cook_id = e.employee_id
+    LEFT JOIN (
+		-- Подзапрос для подсчета количества отпущенных чеков 
+        SELECT 
+            r.waiter_id,
+            COUNT(*) AS receipts_count
+        FROM "Receipts" r
+        WHERE EXTRACT(MONTH FROM r."Date") = month
+          AND EXTRACT(YEAR FROM r."Date") = year
+        GROUP BY r.waiter_id
+    ) receipt_bonuses ON receipt_bonuses.waiter_id = e.employee_id
+    ORDER BY e."Full_name"; -- Сортируем по полному имени сотрудника
 END;
 $$ LANGUAGE plpgsql;
 
--- Процедура для этого
-CREATE OR REPLACE PROCEDURE get_employee_salaries_with_bonuses(
-    IN p_month INTEGER,
-    IN p_year INTEGER,
-    INOUT result_cursor REFCURSOR DEFAULT 'salaries_cursor'
-)
-AS $$
+
+-- Обновленная процедура
+CREATE OR REPLACE PROCEDURE get_salaries_with_bonuses(
+    month INTEGER,
+    year INTEGER,
+    INOUT cur REFCURSOR = 'salaries_cursor'
+) AS $$
 BEGIN
-    OPEN result_cursor FOR
-    SELECT * FROM calculate_salary_with_bonuses(p_month, p_year);
+    OPEN cur FOR SELECT * FROM calculate_salary_with_bonuses(month, year);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -174,5 +183,51 @@ $$ LANGUAGE plpgsql;
 SELECT * FROM calculate_salary_with_bonuses(6, 2023);
 
 -- Проверка процедуры
+BEGIN;
 CALL get_employee_salaries_with_bonuses(6, 2023);
 FETCH ALL FROM salaries_cursor;
+COMMIT;
+
+
+-- Выручка с каждого блюда за определенный период времени
+CREATE OR REPLACE FUNCTION calculate_revenue_per_dish(
+    start_date DATE,
+    end_date DATE
+) RETURNS TABLE (
+    dish_name TEXT,
+    total_revenue REAL  -- Общая выручка с блюда
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        d."Name" AS dish_name,
+        SUM(s."Sale_amount") AS total_revenue            -- Сумма всех продаж данного блюда
+    FROM "Dishes" d
+    JOIN "Sales" s ON d.dish_id = s.dish_id
+    JOIN "Receipts" r ON s.receipt_id = r.receipt_id
+    WHERE r."Date" BETWEEN start_date AND end_date
+    GROUP BY d."Name"
+    ORDER BY total_revenue DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Процедура
+CREATE OR REPLACE PROCEDURE get_revenue_report(
+    start_date DATE,
+    end_date DATE,
+    INOUT cur REFCURSOR = 'revenue_cursor'
+) AS $$
+BEGIN
+    OPEN cur FOR SELECT * FROM calculate_revenue_per_dish(start_date, end_date);
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+SELECT * FROM calculate_revenue_per_dish('2023-01-01', '2023-12-31');
+
+BEGIN;
+CALL get_revenue_report('2023-01-01', '2023-12-01');
+FETCH ALL FROM revenue_cursor;
+COMMIT;
+
