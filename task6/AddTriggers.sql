@@ -10,7 +10,7 @@ insert into "Constants" values (
 insert into "Constants"(constant_text_description, constant_value) values 
 ('Наименьшая сумма чеков для уровня скидок 3', 50000),
 ('Наименьшая сумма чеков для уровня скидок 2', 20000),
-('Наименьшая количество чеков для уровня скидок 1', 3);
+('Наименьшее количество чеков для уровня скидок 1', 3);
 
 insert into "Constants"(constant_text_description, constant_value) values 
 ('Телефон клиента должен начинаться с', 7),
@@ -71,8 +71,9 @@ BEGIN
     
     -- Находим последнее количество товара на складе
     SELECT "Quantity_in_stock" INTO last_quantity
-    FROM "WarehouseStatus"
+    FROM "Warehouse"
     WHERE "product_id" = NEW."product_id"
+    ORDER BY "Date" DESC
     LIMIT 1;
     
     -- Если записи о товаре нет, считаем что было 0
@@ -146,7 +147,9 @@ INSERT INTO "DeliveriesView" (
 -- 3: Успешная вставка поставки с нормальным сроком годности и проверка обновления склада
 
 -- Проверяем текущее количество на складе
-SELECT "Quantity_in_stock" FROM "WarehouseStatus" WHERE "product_id" = 7;
+SELECT * FROM "Warehouse" WHERE "product_id" = 8;
+
+SELECT * FROM "WarehouseStatus" WHERE "product_id" = 8;
 
 -- Вставляем новую поставку
 INSERT INTO "DeliveriesView" (
@@ -157,16 +160,16 @@ INSERT INTO "DeliveriesView" (
     "Quantity",
     "Expiration_date"
 ) VALUES (
-    2461287,
+    2461293,
     CURRENT_DATE,
     3,
-    7,
+    8,
     15,
     CURRENT_DATE + 30  -- Нормальный срок
 );
 
 -- Проверяем обновленное количество на складе
-SELECT "Quantity_in_stock" FROM "WarehouseStatus" WHERE "product_id" = 7;
+SELECT * FROM "WarehouseStatus" WHERE "product_id" = 8; 
 
 
 
@@ -174,7 +177,7 @@ SELECT "Quantity_in_stock" FROM "WarehouseStatus" WHERE "product_id" = 7;
 -- 2
 -- Функция для обновления уровня скидки клиента при добавлении продажи
 
-CREATE OR REPLACE FUNCTION public.update_client_discount_on_sale_change()
+CREATE OR REPLACE FUNCTION public.update_client_discount_on_receipt_change()
 RETURNS trigger AS $$
 DECLARE
     client_id_var INTEGER;
@@ -203,16 +206,11 @@ BEGIN
 
 
 	
-    -- Для DELETE получаем client_id из удаляемой записи
+    -- Определяем client_id в зависимости от операции
     IF TG_OP = 'DELETE' THEN
-        SELECT r."client_id" INTO client_id_var
-        FROM "Receipts" r
-        WHERE r."receipt_id" = OLD."receipt_id";
+        client_id_var := OLD."client_id";
     ELSE
-        -- Для INSERT/UPDATE получаем client_id из новой записи
-        SELECT r."client_id" INTO client_id_var
-        FROM "Receipts" r
-        WHERE r."receipt_id" = NEW."receipt_id";
+        client_id_var := NEW."client_id";
     END IF;
     
     -- Если чек без клиента, выходим
@@ -220,21 +218,20 @@ BEGIN
         RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
     END IF;
     
-    -- Пересчитываем общее количество заказов и сумму (учитывая удаленные записи)
+    -- Пересчитываем общее количество заказов и сумму
     SELECT 
         COUNT(r."receipt_id"),
         COALESCE(SUM(r."Receipt_amount"), 0)
     INTO total_orders_var, total_spent_var
     FROM "Receipts" r
-    WHERE r."client_id" = client_id_var
-    AND EXISTS (SELECT 1 FROM "Sales" s WHERE s."receipt_id" = r."receipt_id");
+    WHERE r."client_id" = client_id_var;
     
     -- Логика расчета скидки
-    IF total_spent_var > discont_3_border_total_spent THEN
+    IF total_spent_var >= discont_3_border_total_spent THEN
         current_discount := 3;
-    ELSIF total_spent_var > discont_2_border_total_spent THEN
+    ELSIF total_spent_var >= discont_2_border_total_spent THEN
         current_discount := 2;
-    ELSIF total_orders_var > discont_1_border_total_orders THEN
+    ELSIF total_orders_var >= discont_1_border_total_orders THEN
         current_discount := 1;
     ELSE
         current_discount := 0;
@@ -250,52 +247,49 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- AFTER INSERT OR DELETE OR UPDATE триггер для таблицы Sales
-CREATE OR REPLACE TRIGGER check_client_discount_on_sale_change
-AFTER INSERT OR DELETE OR UPDATE ON "Sales"
-FOR EACH ROW EXECUTE FUNCTION update_client_discount_on_sale_change();
+CREATE OR REPLACE TRIGGER check_client_discount_on_receipt_change
+AFTER INSERT OR DELETE OR UPDATE ON "Receipts"
+FOR EACH ROW EXECUTE FUNCTION update_client_discount_on_receipt_change();
 
 
 
 
 INSERT INTO "Clients" (client_id, "Discount_level", "Card_number", "Phone_number") VALUES 
-(9999956, 0, 2345456732443750, 79351993754);
+(9999962, 0, 1245456733443752, 79351993754);
 
 SELECT * FROM "Clients" 
-WHERE client_id = 9999956;
+WHERE client_id = 9999962;
 
-INSERT INTO "Receipts"(receipt_id, "Date", "Time", client_id, "Receipt_amount", "Payment_type") VALUES
-(100500, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
-(100501, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
-(100502, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта'),
-(100503, CURRENT_DATE, CURRENT_TIME, 9999956, 1200, 'Карта');
+INSERT INTO "Receipts"("Date", "Time", client_id, "Receipt_amount", "Payment_type") VALUES
+(CURRENT_DATE, CURRENT_TIME, 9999962, 1200, 'Карта'),
+(CURRENT_DATE, CURRENT_TIME, 9999962, 1200, 'Карта'),
+(CURRENT_DATE, CURRENT_TIME, 9999962, 1200, 'Карта'),
+(CURRENT_DATE, CURRENT_TIME, 9999962, 1200, 'Карта');
 
 
-INSERT INTO "Sales"(dish_id, receipt_id, "Sale_amount") VALUES
-(4, 100345, 1200),
-(78, 100324, 1200),
-(4, 100346, 1200),
-(4, 100347, 1200);
 
 select * from "Receipts" c 
-where c.client_id = 9999956;
+where c.client_id = 9999962;
 
 -- Проверка уровня скидок(должен быть 1 так как количество чеков >3)
 SELECT * FROM "Clients" 
-WHERE client_id = 9999956;
+WHERE client_id = 9999962;
 
-INSERT INTO "Receipts"(receipt_id, "Date", "Time", client_id, "Receipt_amount", "Payment_type") VALUES
-(100504, CURRENT_DATE, CURRENT_TIME, 9999956, 20000, 'Карта');
+
+
+INSERT INTO "Receipts"("Date", "Time", client_id, "Receipt_amount", "Payment_type") VALUES
+(CURRENT_DATE, CURRENT_TIME, 9999962, 20000, 'Карта');
 
 -- Должен быть 2 потому что сумма чеков >20000 
 SELECT * FROM "Clients" 
-WHERE client_id = 9999956;
+WHERE client_id = 9999962;
 
-INSERT INTO "Sales"(dish_id, receipt_id, "Sale_amount") VALUES
-(80, 100347, 40000);
+INSERT INTO "Receipts"("Date", "Time", client_id, "Receipt_amount", "Payment_type") VALUES
+(CURRENT_DATE, CURRENT_TIME, 9999962, 30000, 'Наличные');
 
 -- Должен быть 3
 SELECT * FROM "Clients" 
-WHERE client_id = 9999956;
+WHERE client_id = 9999962;
 
 
 -- 3
@@ -519,7 +513,7 @@ value TEXT
 );
 
 insert into "Text_constants" values
-('Уведомлять при уведомлении поставки моложе', '7 days');
+('Уведомлять при поступлении поставки моложе', '7 days');
 
 insert into "Text_constants" values
 ('Причина увольнения сотрудника по умолчанию', 'По собственному желанию');
@@ -550,7 +544,7 @@ SELECT * FROM "Employees";
 CREATE OR REPLACE FUNCTION archive_employee_instead()
 RETURNS TRIGGER AS $$
 DECLARE
-	termination_reason TEXT;
+	termination_reason_var TEXT;
     termination_reason_default TEXT;
 BEGIN
 	SELECT value FROM "Text_constants"
@@ -559,21 +553,22 @@ BEGIN
 	INTO termination_reason_default;
 
 	BEGIN
-        termination_reason := current_setting('terminal.reason');
+        termination_reason_var := current_setting('terminal.reason');
     EXCEPTION WHEN undefined_object THEN
-        termination_reason := termination_reason_default; -- По умолчанию
+        termination_reason_var := termination_reason_default; -- По умолчанию
     END;
 
 	
     UPDATE "Employees"
-	SET hiring = FALSE
+	SET hiring = FALSE,
+		termination_reason = termination_reason_var
 	WHERE employee_id = OLD.employee_id;
     
     RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
 
-
+-- INSTEAD OF DELETE триггер
 CREATE OR REPLACE TRIGGER archive_employee_instead_of_delete
 INSTEAD OF DELETE ON employees_view
 FOR EACH ROW
@@ -585,30 +580,28 @@ WHERE employee_id = 48;
 
 DELETE FROM employees_view WHERE "employee_id" = 48;
 
--- Проверяем, что в таблице hiring теперь false
+-- Проверяем, что в таблице hiring теперь false и есть причина увольнения
 SELECT * FROM employees_view 
 where employee_id = 48;
 
 
 -- Увольняем по другой причине
 SELECT * FROM "Employees" 
-WHERE employee_id = 92;
+WHERE employee_id = 94;
 
 BEGIN;
 
 SET LOCAL terminal.reason = 'Плохо поработал';
 
 DELETE FROM employees_view 
-WHERE employee_id = 92;
+WHERE employee_id = 94;
 
 COMMIT;
 
 -- Проверяем, остался ли сотрудник в employees
 SELECT * FROM "Employees" 
-WHERE employee_id = 92;
+WHERE employee_id = 94;
 
--- Смотрим причину увольнения
-SELECT * FROM "FormerEmployees";
 
 
 
@@ -638,11 +631,19 @@ BEGIN
     -- Рассчитываем новое количество
     current_quantity := COALESCE(current_quantity, 0) - OLD."Quantity";
 
-
+	
 	-- Проверка на отрицательное количество (защита от ошибок)
     IF current_quantity < 0 THEN
-        RAISE WARNING 'Отрицательное количество товара % после удаления поставки. Установлено 0.', OLD."product_id";
-        current_quantity := 0;
+		DECLARE
+			product_name TEXT;
+		BEGIN
+			SELECT "Product_name" FROM "Products" 
+			WHERE product_id = OLD.product_id 
+			INTO product_name;
+
+	        RAISE WARNING 'Отрицательное количество товара % после удаления поставки. Установлено 0.', product_name;
+	        current_quantity := 0;
+		END;
     END IF;
     
 	-- Ищем тип склада, который был у продукта из поставки
@@ -680,22 +681,22 @@ EXECUTE FUNCTION update_warehouse_after_delivery_delete();
 -- Тест
 -- Ищем тестовый продукт
 SELECT * FROM "WarehouseStatus" ws 
-WHERE product_id = 1213;
+WHERE product_id = 1257;
 
 SELECT * FROM "Deliveries" d 
-WHERE product_id = 1213;
+WHERE product_id = 1257;
 
 -- Удаляем
 DELETE FROM "Deliveries"
-WHERE consignment_note_id = 30842;
+WHERE consignment_note_id = 88646;
 
 -- Проверяем, что поставки больше нет
 SELECT * FROM "Deliveries" d 
-WHERE product_id = 1213;
+WHERE product_id = 1257;
 
 -- Проверяем, что теперь на складе меньшее количество
 SELECT * FROM "WarehouseStatus" ws 
-WHERE product_id = 1213;
+WHERE product_id = 1257;
 
 
 
@@ -709,11 +710,15 @@ DECLARE
 BEGIN
 
 	SELECT value FROM "Text_constants"
-	WHERE description = 'Уведомлять при уведомлении поставки моложе'
+	WHERE description = 'Уведомлять при поступлении поставки моложе'
 	into notification;
+
     -- BEFORE-логика
     IF OLD."Arrival_date" > CURRENT_DATE - notification::INTERVAL THEN
-        RAISE WARNING 'Удаляется свежая поставка (ID: %)', OLD."consignment_note_id";
+        RAISE WARNING 'Удаляется свежая поставка (ID накладной: %, прибыла: %, прошло дней: %)', 
+                      OLD."consignment_note_id", 
+                      OLD."Arrival_date", 
+                      (CURRENT_DATE - OLD."Arrival_date");
     END IF;
 	
 	RETURN OLD;
@@ -728,10 +733,11 @@ EXECUTE FUNCTION warn_delivery_deletion();
 
 -- Тест
 INSERT INTO "Deliveries"(consignment_note_id, "Arrival_date", supplier_id, product_id, "Quantity", "Expiration_date") VALUES
-(999990, '2025-05-20', 1, 1, 100, '2025-06-10');
+(999990, CURRENT_DATE, 1, 1, 100, '2025-06-10');
+
 
 SELECT * FROM "Deliveries" d
-WHERE "Arrival_date" = '2025-05-20';
+WHERE "Arrival_date" = CURRENT_DATE;
 
 DELETE FROM "Deliveries"
 WHERE consignment_note_id = 999990;
