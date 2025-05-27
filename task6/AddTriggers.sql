@@ -26,7 +26,11 @@ select * from "Constants";
 -- 1
 -- Представление таблицы доставок
 CREATE OR REPLACE VIEW "DeliveriesView" AS
-SELECT * FROM "Deliveries";
+SELECT d.*, p."Product_name", s."Name" as "Supplier_name" FROM "Deliveries" d
+join "Products" p on d.product_id = p.product_id
+join "Suppliers" s on d.supplier_id = s.supplier_id;
+
+select * from "DeliveriesView";
 
 -- Функция, которая вместо простой вставки строки в "Deliveries", проверяет срок годности и обновляет склад
 CREATE OR REPLACE FUNCTION process_delivery_instead_of()
@@ -68,6 +72,8 @@ BEGIN
         NEW."Quantity",
         NEW."Expiration_date"
     );
+
+
     
     -- Находим последнее количество товара на складе
     SELECT "Quantity_in_stock" INTO last_quantity
@@ -160,13 +166,16 @@ INSERT INTO "DeliveriesView" (
     "Quantity",
     "Expiration_date"
 ) VALUES (
-    2461293,
+    2461295,
     CURRENT_DATE,
     3,
     8,
     15,
     CURRENT_DATE + 30  -- Нормальный срок
 );
+
+select * from "DeliveriesView" 
+where product_id = 8;
 
 -- Проверяем обновленное количество на складе
 SELECT * FROM "WarehouseStatus" WHERE "product_id" = 8; 
@@ -451,7 +460,14 @@ WHERE receipt_id = 100;
 -- При замене длолжности сотрудника его опыт меняется или на тот, который был передан, или на больший на год
 -- Представление
 CREATE OR REPLACE VIEW employees_view AS
-SELECT * FROM "Employees";
+SELECT e.*, COALESCE(COUNT(s.sale_id), 0) as "Dishes_cooked", coalesce(COUNT(r.receipt_id), 0) as "Receipts_count"
+FROM "Employees" e
+left join "Sales" s on s.cook_id = e.employee_id
+left join "Receipts" r on r.waiter_id = e.employee_id
+group by e.employee_id;
+
+
+select * from employees_view;
 
 -- Функция
 CREATE OR REPLACE FUNCTION update_employee_position_instead()
@@ -487,7 +503,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Триггер
-CREATE TRIGGER employees_position_update
+CREATE or replace TRIGGER employees_position_update
 INSTEAD OF UPDATE ON employees_view
 FOR EACH ROW
 EXECUTE FUNCTION update_employee_position_instead();
@@ -536,9 +552,8 @@ WHERE description = 'Причина увольнения сотрудника п
 LIMIT 1;
 
 
--- Представление
-CREATE OR REPLACE VIEW employees_view AS
-SELECT * FROM "Employees";
+-- Представление уже создано
+select * from employees_view;
 
 -- Функция
 CREATE OR REPLACE FUNCTION archive_employee_instead()
@@ -681,22 +696,22 @@ EXECUTE FUNCTION update_warehouse_after_delivery_delete();
 -- Тест
 -- Ищем тестовый продукт
 SELECT * FROM "WarehouseStatus" ws 
-WHERE product_id = 1257;
+WHERE product_id = 1260;
 
 SELECT * FROM "Deliveries" d 
-WHERE product_id = 1257;
+WHERE product_id = 1260;
 
 -- Удаляем
 DELETE FROM "Deliveries"
-WHERE consignment_note_id = 88646;
+WHERE consignment_note_id = 43007;
 
 -- Проверяем, что поставки больше нет
 SELECT * FROM "Deliveries" d 
-WHERE product_id = 1257;
+WHERE product_id = 1260;
 
 -- Проверяем, что теперь на складе меньшее количество
 SELECT * FROM "WarehouseStatus" ws 
-WHERE product_id = 1257;
+WHERE product_id = 1260;
 
 
 
