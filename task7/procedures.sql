@@ -1,12 +1,16 @@
--- Функция для расчета прибыли за каждый день в заданном периоде
-CREATE OR REPLACE FUNCTION calculate_daily_profit(
-    start_date DATE,
-    end_date DATE
-)
-RETURNS TABLE (
+CREATE TYPE daily_profit_record AS (
     day_date DATE,
     daily_profit NUMERIC
-) AS $$
+);
+
+
+-- Функция для расчета прибыли за каждый день в заданном периоде
+-- Возвращает SETOF составного типа
+CREATE OR REPLACE FUNCTION calculate_daily_profit(
+    start_date_param DATE,
+    end_date_param DATE
+)
+RETURNS SETOF daily_profit_record AS $$
 BEGIN
     RETURN QUERY
     SELECT 
@@ -15,7 +19,7 @@ BEGIN
     FROM 
         "Receipts" r
     WHERE 
-        r."Date" BETWEEN start_date AND end_date
+        r."Date" BETWEEN start_date_param AND end_date_param
     GROUP BY 
         r."Date"
     ORDER BY 
@@ -23,69 +27,87 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+
 -- Фунция для расчета прибыли а каждый месяц в заданном периоде
+-- Возвращает таблицу
+-- Использует цикл
 CREATE OR REPLACE FUNCTION calculate_monthly_profit(
-    start_date DATE,
-    end_date DATE
+    start_date_param DATE,
+    end_date_param DATE
 )
 RETURNS TABLE (
     year_num INTEGER,
     month_num INTEGER,
     monthly_profit NUMERIC(10,2)
 ) AS $$
+DECLARE
+    current_month DATE;
+    profit NUMERIC(10,2);
 BEGIN
-    RETURN QUERY
-    SELECT 
-        EXTRACT(YEAR FROM r."Date")::INTEGER AS year_num,
-        EXTRACT(MONTH FROM r."Date")::INTEGER AS month_num,
-        CAST(SUM(r."Receipt_amount") AS NUMERIC(10,2)) AS monthly_profit
-    FROM 
-        "Receipts" r
-    WHERE 
-        r."Date" BETWEEN start_date AND end_date
-    GROUP BY 
-        EXTRACT(YEAR FROM r."Date"), EXTRACT(MONTH FROM r."Date")
-    ORDER BY 
-        year_num, month_num;
+    current_month := date_trunc('month', start_date_param);  -- Начинаем с первого дня месяца начала
+    WHILE current_month <= date_trunc('month', end_date_param) LOOP
+        SELECT COALESCE(SUM(r."Receipt_amount"), 0) INTO profit
+        FROM "Receipts" r
+        WHERE r."Date" >= current_month AND r."Date" < (current_month + INTERVAL '1 month');
+
+        -- Извлекаем год и месяц из текущей даты
+        year_num := EXTRACT(YEAR FROM current_month)::INTEGER;
+        month_num := EXTRACT(MONTH FROM current_month)::INTEGER;
+
+        -- Возвращаем результат с помощью RETURN
+        RETURN QUERY SELECT year_num, month_num, profit;
+
+        -- Переходим к следующему месяцу
+        current_month := current_month + INTERVAL '1 month';
+    END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+
+
 
 
 -- Функция для проверки аллергенов в блюде по названию блюда
+-- Возвращает базовый тип TEXT
 CREATE OR REPLACE FUNCTION check_allergens_by_dish_name(
-    dish_name TEXT
-)
-RETURNS SETOF TEXT AS $$
+    p_dish_name TEXT
+) RETURNS TEXT AS $$
 DECLARE
-    dish_id_var INTEGER;
+    v_dish_id INTEGER;
+    v_allergens TEXT;
+    v_result TEXT;
 BEGIN
     -- Находим ID блюда по имени
-    SELECT d."dish_id" INTO dish_id_var
+    SELECT d."dish_id" INTO v_dish_id
     FROM "Dishes" d
-    WHERE d."Name" ILIKE dish_name;
+    WHERE d."Name" ILIKE p_dish_name;
     
-    IF dish_id_var IS NULL THEN
-        RETURN NEXT 'Блюдо не найдено';
-        RETURN;
+    IF v_dish_id IS NULL THEN
+        RETURN 'Блюдо не найдено';
     END IF;
     
-    -- Возвращаем аллергены для найденного блюда
-    RETURN QUERY
-    SELECT a."Allergen"::TEXT
+    -- Собираем аллергены в строку
+    SELECT STRING_AGG(a."Allergen", ', ') INTO v_allergens
     FROM "Allergens" a
     JOIN "Allergens_and_dishes" ad ON a."allergen_id" = ad."allergen_id"
-    WHERE ad."dish_id" = dish_id_var;
+    WHERE ad."dish_id" = v_dish_id;
     
-    IF NOT FOUND THEN
-        RETURN NEXT 'Аллергены не обнаружены';
+    IF v_allergens IS NULL THEN
+        v_result := 'Аллергены не обнаружены';
+    ELSE
+        v_result := 'Аллергены: ' || v_allergens;
     END IF;
+    
+    RETURN v_result;
 END;
 $$ LANGUAGE plpgsql;
 
+-- Тесты
 
-SELECT * FROM calculate_daily_profit('2023-01-01', '2023-01-31');
+SELECT * FROM calculate_daily_profit(start_date_param => '2023-01-01', end_date_param => '2023-01-31');
 
-SELECT * FROM calculate_monthly_profit('2023-01-01', '2023-12-31');
+
+SELECT * FROM calculate_monthly_profit(start_date_param => '2023-01-01', end_date_param => '2023-12-31');
 
 SELECT * FROM check_allergens_by_dish_name('Салат Цезарь');
 
@@ -163,12 +185,12 @@ BEGIN
           AND EXTRACT(YEAR FROM r."Date") = year
         GROUP BY r.waiter_id
     ) receipt_bonuses ON receipt_bonuses.waiter_id = e.employee_id
-    ORDER BY e."Full_name"; -- Сортируем по полному имени сотрудника
+    ORDER BY e."Full_name"; 
 END;
 $$ LANGUAGE plpgsql;
 
 
--- Обновленная процедура
+-- Процедура
 CREATE OR REPLACE PROCEDURE get_salaries_with_bonuses(
     month INTEGER,
     year INTEGER,
@@ -201,7 +223,7 @@ BEGIN
     RETURN QUERY
     SELECT 
         d."Name" AS dish_name,
-        SUM(s."Sale_amount") AS total_revenue            -- Сумма всех продаж данного блюда
+        SUM(s."Sale_amount") AS total_revenue
     FROM "Dishes" d
     JOIN "Sales" s ON d.dish_id = s.dish_id
     JOIN "Receipts" r ON s.receipt_id = r.receipt_id
@@ -223,6 +245,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+-- Тесты
 
 SELECT * FROM calculate_revenue_per_dish('2023-01-01', '2023-12-31');
 
@@ -230,4 +253,3 @@ BEGIN;
 CALL get_revenue_report('2023-01-01', '2023-12-01');
 FETCH ALL FROM revenue_cursor;
 COMMIT;
-
